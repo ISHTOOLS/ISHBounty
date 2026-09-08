@@ -33,7 +33,7 @@ def _auto_payment(db: Session, bounty: Bounty) -> None:
     payment = create_payment(db, bounty, "DIRECT_BANK_TRANSFER", None, account.id)
     try:
         transfer_id = dispatch_payout(payment, account)
-    except Exception:
+    except (OSError, RuntimeError, ValueError):
         transfer_id = None
     if transfer_id:
         payment.transfer_reference = transfer_id
