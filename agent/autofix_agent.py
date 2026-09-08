@@ -46,6 +46,10 @@ def issue(repo: str, number: int) -> dict[str, Any]:
     return gh("GET", f"{GITHUB_API}/repos/{repo}/issues/{number}")
 
 
+def repo_metadata(repo: str) -> dict[str, Any]:
+    return gh("GET", f"{GITHUB_API}/repos/{repo}")
+
+
 def existing_agent_pr(repo: str, issue_number: int) -> bool:
     query = f"repo:{repo} is:pr is:open head:agent/issue-{issue_number}"
     data = gh("GET", f"{GITHUB_API}/search/issues", params={"q": query, "per_page": 10})
@@ -53,7 +57,7 @@ def existing_agent_pr(repo: str, issue_number: int) -> bool:
 
 
 def default_branch(repo: str) -> str:
-    return gh("GET", f"{GITHUB_API}/repos/{repo}")["default_branch"]
+    return repo_metadata(repo)["default_branch"]
 
 
 def read_tree(repo: str, ref: str) -> list[dict[str, Any]]:
@@ -117,6 +121,18 @@ def push_branch(repo: str, branch: str, workdir: Path) -> None:
     run(["git", "push", authenticated_url, f"HEAD:refs/heads/{branch}"], workdir)
 
 
+def request_owner_review(repo: str, pr_number: int) -> None:
+    owner = repo_metadata(repo).get("owner", {})
+    login = owner.get("login")
+    if owner.get("type") != "User" or not login:
+        return
+    try:
+        gh("POST", f"{GITHUB_API}/repos/{repo}/pulls/{pr_number}/requested_reviewers", json={"reviewers": [login]})
+    except requests.HTTPError:
+        # Organization owners cannot be requested as individual reviewers; the PR remains open for maintainer review.
+        pass
+
+
 def process_issue(item: dict[str, Any]) -> None:
     repo = item["repository_url"].split("/repos/")[-1]
     number = int(item["number"])
@@ -162,7 +178,8 @@ def process_issue(item: dict[str, Any]) -> None:
         push_branch(repo, branch, workdir)
 
     pr = gh("POST", f"{GITHUB_API}/repos/{repo}/pulls", json={"title": f"fix: resolve #{number}", "head": branch, "base": base, "body": f"Automated fix prepared by ISHBounty Agent.\n\nCloses #{number}\n\nThe agent ran the configured repository test command before opening this PR. Final acceptance remains with the project owner/maintainer.", "maintainer_can_modify": True})
-    comment(repo, number, f"🤖 ISHBounty Agent analyzed this issue and opened a repair PR: {pr['html_url']}\n\nCI and maintainer review are required before merge. The agent does not merge its own changes.")
+    request_owner_review(repo, pr["number"])
+    comment(repo, number, f"🤖 ISHBounty Agent analyzed this issue and opened a repair PR: {pr['html_url']}\n\nThe project owner/maintainer has been requested for review when GitHub permits it. CI and human review are required before merge.")
 
 
 def main() -> int:
