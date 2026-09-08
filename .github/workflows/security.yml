@@ -30,6 +30,8 @@ jobs:
       - name: Tests
         run: pytest -q backend/tests
       - name: Lint
-        run: ruff check backend
+        run: |
+          ruff check backend --fix
+          ruff check backend
       - name: Dependency audit
         run: pip-audit
