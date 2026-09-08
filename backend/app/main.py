@@ -1,10 +1,11 @@
-import hashlib, hmac
+import hashlib, hmac, json
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db import Base, engine, get_db
-from app.models import BountyStatus, Payment
+from app.github_events import handle_check_run, handle_pull_request
+from app.models import Payment
 from app.schemas import BountyCreate, BountyRead, ClaimRequest, PaymentCreate, PaymentRead, TransitionRequest, WebhookResult
 from app.services import claim, create_bounty, create_payment, get_bounty, list_bounties, mark_paid, transition
 
@@ -54,11 +55,15 @@ def paid(bounty_id: str, data: PaymentCreate, db: Session = Depends(get_db)):
     except ValueError as e: raise HTTPException(409, str(e))
 
 @app.post("/api/github/webhook", response_model=WebhookResult)
-async def github_webhook(request: Request, x_github_event: str = Header(default="unknown"), x_hub_signature_256: str | None = Header(default=None)):
+async def github_webhook(request: Request, x_github_event: str = Header(default="unknown"), x_hub_signature_256: str | None = Header(default=None), db: Session = Depends(get_db)):
     body = await request.body()
     secret = settings.github_webhook_secret
     if secret:
         if not x_hub_signature_256: raise HTTPException(401,"missing signature")
         expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, x_hub_signature_256): raise HTTPException(401,"invalid signature")
+    try: payload = json.loads(body or b"{}")
+    except json.JSONDecodeError: raise HTTPException(400,"invalid JSON")
+    if x_github_event == "pull_request": handle_pull_request(db, payload)
+    elif x_github_event == "check_run": handle_check_run(db, payload)
     return {"accepted": True, "event": x_github_event}
