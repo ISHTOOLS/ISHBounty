@@ -55,7 +55,7 @@ def test_duplicate_repository_issue_rejected():
     first = client.post('/api/bounties', json=payload(issue_number=7))
     assert first.status_code == 201
     duplicate = client.post('/api/bounties', json=payload(issue_number=7))
-    assert duplicate.status_code in {400, 409, 422, 500}
+    assert duplicate.status_code == 409
 
 
 def test_webhook_pr_check_and_merge_lifecycle():
