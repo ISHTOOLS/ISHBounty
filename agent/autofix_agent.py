@@ -6,9 +6,11 @@ import re
 import shlex
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
+import jwt
 import requests
 
 GITHUB_API = "https://api.github.com"
@@ -19,10 +21,37 @@ MAX_FILES = int(os.getenv("ISHB_AGENT_MAX_FILES", "12"))
 MAX_PATCH_CHARS = int(os.getenv("ISHB_AGENT_MAX_PATCH_CHARS", "60000"))
 MAX_RETRIES = int(os.getenv("ISHB_AGENT_MAX_RETRIES", "2"))
 TEST_COMMAND = os.getenv("ISHB_AGENT_TEST_COMMAND", "python -m pytest -q")
+_app_token: tuple[str, float] | None = None
 
 
 def token() -> str:
-    return os.environ["ISHB_AGENT_TOKEN"]
+    global _app_token
+    app_id = os.getenv("ISHB_GITHUB_APP_ID")
+    private_key = os.getenv("ISHB_GITHUB_APP_PRIVATE_KEY")
+    if not app_id or not private_key:
+        return os.environ["ISHB_AGENT_TOKEN"]
+    now = int(time.time())
+    if _app_token and _app_token[1] > now + 60:
+        return _app_token[0]
+    key = private_key.replace("\\n", "\n")
+    assertion = jwt.encode({"iat": now - 30, "exp": now + 540, "iss": str(app_id)}, key, algorithm="RS256")
+    response = requests.get(f"{GITHUB_API}/repos/{_target_repo()}/installation", headers={"Authorization": f"Bearer {assertion}", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}, timeout=30)
+    response.raise_for_status()
+    installation_id = response.json()["id"]
+    response = requests.post(f"{GITHUB_API}/app/installations/{installation_id}/access_tokens", headers={"Authorization": f"Bearer {assertion}", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}, json={}, timeout=30)
+    response.raise_for_status()
+    data = response.json()
+    _app_token = (data["token"], float(time.time() + 3300))
+    return _app_token[0]
+
+
+_CURRENT_REPO = ""
+
+
+def _target_repo() -> str:
+    if not _CURRENT_REPO:
+        raise RuntimeError("target repository context is not initialized")
+    return _CURRENT_REPO
 
 
 def headers() -> dict[str, str]:
@@ -61,7 +90,7 @@ def default_branch(repo: str) -> str:
 
 
 def read_tree(repo: str, ref: str) -> list[dict[str, Any]]:
-    data = gh("GET", f"{GITHUB_API}/repos/{repo}/git/trees/{ref}", params={"recursive": "1"})
+    data = gh("GET", f"{GITHUB_API}/git/trees/{ref}", params={"recursive": "1"})
     return data.get("tree", [])
 
 
@@ -129,12 +158,13 @@ def request_owner_review(repo: str, pr_number: int) -> None:
     try:
         gh("POST", f"{GITHUB_API}/repos/{repo}/pulls/{pr_number}/requested_reviewers", json={"reviewers": [login]})
     except requests.HTTPError:
-        # Organization owners cannot be requested as individual reviewers; the PR remains open for maintainer review.
         pass
 
 
 def process_issue(item: dict[str, Any]) -> None:
+    global _CURRENT_REPO
     repo = item["repository_url"].split("/repos/")[-1]
+    _CURRENT_REPO = repo
     number = int(item["number"])
     target_issue = issue(repo, number)
     if existing_agent_pr(repo, number):
