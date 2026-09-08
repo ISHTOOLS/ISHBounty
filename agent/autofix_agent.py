@@ -22,8 +22,11 @@ PROTECTED_FILES = {
     ".env.production",
     "credentials.json",
     "pyproject.toml",
+    "setup.py",
+    "setup.cfg",
     "requirements.txt",
     "requirements-dev.txt",
+    "requirements-test.txt",
     "package.json",
     "package-lock.json",
     "npm-shrinkwrap.json",
@@ -91,6 +94,9 @@ def gh(method: str, url: str, **kwargs: Any) -> Any:
 
 
 def discover_issues() -> list[dict[str, Any]]:
+    global _CURRENT_REPO
+    if not _CURRENT_REPO:
+        _CURRENT_REPO = os.getenv("ISHB_AGENT_DISCOVERY_REPO", "")
     label = os.getenv("ISHB_AGENT_LABEL", DEFAULT_LABEL)
     query = f"is:issue is:open label:{label}"
     data = gh("GET", f"{GITHUB_API}/search/issues", params={"q": query, "per_page": 30, "sort": "updated", "order": "desc"})
@@ -199,9 +205,10 @@ def request_owner_review(repo: str, pr_number: int) -> None:
 
 
 def process_issue(item: dict[str, Any]) -> None:
-    global _CURRENT_REPO
+    global _CURRENT_REPO, _app_token
     repo = item["repository_url"].split("/repos/")[-1]
     _CURRENT_REPO = repo
+    _app_token = None
     number = int(item["number"])
     target_issue = issue(repo, number)
     if existing_agent_pr(repo, number):
