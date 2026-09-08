@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-import base64
 import os
 import re
+import shlex
+import subprocess
+import tempfile
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -38,62 +41,55 @@ def model(repo: str, pr: dict[str, Any], logs: str, files: dict[str, str]) -> st
     return r.json()['choices'][0]['message']['content']
 
 
+def run(command: list[str], cwd: Path) -> None:
+    subprocess.run(command, cwd=cwd, check=True, timeout=900)
+
+
 def main() -> int:
     repo = os.environ['ISHB_TARGET_REPO']
     pr_number = int(os.environ['ISHB_PR_NUMBER'])
     pr = gh('GET', f'{API}/repos/{repo}/pulls/{pr_number}')
-    if not pr.get('head', {}).get('ref', '').startswith('agent/issue-'):
-        raise RuntimeError('PR is not an ISHBounty Agent branch')
-    if pr.get('state') != 'open':
+    branch = pr.get('head', {}).get('ref', '')
+    if not branch.startswith('agent/issue-') or pr.get('state') != 'open':
         return 0
-
-    issue_number = int(pr['head']['ref'].split('agent/issue-', 1)[1])
+    issue_number = int(branch.split('agent/issue-', 1)[1])
     commit = gh('GET', f"{API}/repos/{repo}/commits/{pr['head']['sha']}")
     logs = os.getenv('ISHB_CI_LOGS', 'CI failed; inspect the PR checks and changed files.')
-    files = {}
-    for f in commit.get('files', [])[:MAX_FILES]:
-        path = f['filename']
-        if safe(path) and f.get('status') != 'removed':
-            data = gh('GET', f'{API}/repos/{repo}/contents/{path}', params={'ref': pr['head']['sha']})
-            files[path] = base64.b64decode(data['content']).decode('utf-8')
 
-    diff = model(repo, pr, logs, files)
-    if not diff or len(diff) > MAX_PATCH:
-        raise RuntimeError('repair diff rejected by size/empty guard')
-    paths = re.findall(r'^\+\+\+ b/(.+)$', diff, re.MULTILINE)
-    if not paths or len(paths) > MAX_FILES or any(not safe(p) for p in paths):
-        raise RuntimeError('repair diff contains invalid or protected paths')
+    # Privileged worker reads code as data only. It never executes the PR branch.
+    with tempfile.TemporaryDirectory(prefix='ishbounty-repair-') as tmp:
+        workdir = Path(tmp) / 'repo'
+        auth_url = f"https://x-access-token:{os.environ['ISHB_AGENT_TOKEN']}@github.com/{repo}.git"
+        run(['git', 'clone', '--depth', '50', '--branch', branch, auth_url, str(workdir)], Path(tmp))
+        run(['git', 'remote', 'set-url', 'origin', f'https://github.com/{repo}.git'], workdir)
+        files = {}
+        for f in commit.get('files', [])[:MAX_FILES]:
+            path = f['filename']
+            if safe(path) and f.get('status') != 'removed':
+                local = workdir / path
+                if local.exists() and local.is_file() and local.stat().st_size <= 200_000:
+                    files[path] = local.read_text(encoding='utf-8', errors='replace')
 
-    # Do not execute the PR branch here. Apply the model patch to the Git object database only.
-    # The normal pull_request CI then executes the resulting commit without agent secrets.
-    base_tree = commit['commit']['tree']['sha']
-    tree_entries = []
-    import difflib
-    for path in paths:
-        data = gh('GET', f'{API}/repos/{repo}/contents/{path}', params={'ref': pr['head']['sha']}) if path in files else None
-        old = files.get(path, '')
-        target = None
-        marker = re.search(rf'^--- a/{re.escape(path)}.*?^\+\+\+ b/{re.escape(path)}.*?(?=^diff |\Z)', diff, re.M | re.S)
-        if marker:
-            hunk = marker.group(0).splitlines()[2:]
-            result = []
-            for line in hunk:
-                if line.startswith('@@'):
-                    continue
-                if line.startswith('+') and not line.startswith('+++'):
-                    result.append(line[1:])
-                elif line.startswith(' ') or line.startswith('-'):
-                    if line.startswith(' '): result.append(line[1:])
-            if result:
-                target = '\n'.join(result) + '\n'
-        if target is None:
-            raise RuntimeError(f'could not safely materialize patch for {path}')
-        tree_entries.append({'path': path, 'mode': '100644', 'type': 'blob', 'content': target})
+        diff = model(repo, pr, logs, files)
+        if not diff or len(diff) > MAX_PATCH:
+            raise RuntimeError('repair diff rejected by size/empty guard')
+        paths = re.findall(r'^\+\+\+ b/(.+)$', diff, re.MULTILINE)
+        if not paths or len(paths) > MAX_FILES or any(not safe(p) for p in paths):
+            raise RuntimeError('repair diff contains invalid or protected paths')
 
-    tree = gh('POST', f'{API}/repos/{repo}/git/trees', json={'base_tree': base_tree, 'tree': tree_entries})
-    new_commit = gh('POST', f'{API}/repos/{repo}/git/commits', json={'message': f'fix: repair CI for #{issue_number}', 'tree': tree['sha'], 'parents': [pr['head']['sha']]})
-    ref = gh('PATCH', f"{API}/repos/{repo}/git/refs/heads/{pr['head']['ref']}", json={'sha': new_commit['sha'], 'force': False})
-    gh('POST', f'{API}/repos/{repo}/issues/{issue_number}/comments', json={'body': f"🤖 ISHBounty Agent repaired the CI failure and pushed a follow-up commit to PR #{pr_number}. CI will run again automatically.\n\nThe repair worker did not execute untrusted PR code in its privileged context."})
+        patch = workdir / '.ishbounty-repair.patch'
+        patch.write_text(diff, encoding='utf-8')
+        run(['git', 'apply', '--check', patch.name], workdir)
+        run(['git', 'apply', patch.name], workdir)
+        patch.unlink(missing_ok=True)
+        run(['git', 'config', 'user.name', 'ISHBounty Agent'], workdir)
+        run(['git', 'config', 'user.email', 'ishbounty-agent[bot]@users.noreply.github.com'], workdir)
+        run(['git', 'add', '--all'], workdir)
+        run(['git', 'commit', '-m', f'fix: repair CI for #{issue_number}'], workdir)
+        push_url = f"https://x-access-token:{os.environ['ISHB_AGENT_TOKEN']}@github.com/{repo}.git"
+        run(['git', 'push', push_url, f'HEAD:refs/heads/{branch}'], workdir)
+
+    gh('POST', f'{API}/repos/{repo}/issues/{issue_number}/comments', json={'body': f"🤖 ISHBounty Agent repaired the CI failure and pushed a follow-up commit to PR #{pr_number}. CI will run again automatically. The privileged repair worker did not execute repository code."})
     return 0
 
 
