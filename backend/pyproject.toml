@@ -21,5 +21,8 @@ test = ["pytest>=8,<9", "httpx>=0.27,<1"]
 pythonpath = ["."]
 testpaths = ["tests"]
 
+[tool.ruff.lint]
+ignore = ["B008"]
+
 [tool.setuptools.packages.find]
 include = ["app*"]
