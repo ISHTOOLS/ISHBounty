@@ -11,7 +11,24 @@ from app.core.config import get_settings
 from app.db import Base, engine, get_db
 from app.github_events import handle_check_run, handle_pull_request
 from app.models import Payment, WebhookDelivery
-from app.schemas import BountyCreate, BountyRead, ClaimRequest, PaymentCreate, PaymentRead, TransitionRequest, WebhookResult
+from app.payment_accounts import (
+    create_payment_account,
+    delete_payment_account,
+    get_payment_account,
+    list_payment_accounts,
+    verify_payment_account_owner_currency,
+)
+from app.schemas import (
+    BountyCreate,
+    BountyRead,
+    ClaimRequest,
+    PaymentAccountCreate,
+    PaymentAccountRead,
+    PaymentCreate,
+    PaymentRead,
+    TransitionRequest,
+    WebhookResult,
+)
 from app.services import claim, create_bounty, create_payment, get_bounty, list_bounties, mark_paid, transition
 
 settings = get_settings()
@@ -21,7 +38,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.origins,
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -31,9 +48,10 @@ def require_api_key(x_ishbounty_api_key: str | None = Header(default=None)) -> N
     current = get_settings()
     if current.app_env.lower() in {"development", "test"}:
         return
-    if not current.api_key:
+    configured_api_key = current.effective_api_key
+    if not configured_api_key:
         raise HTTPException(503, "API authentication is not configured")
-    if not x_ishbounty_api_key or not hmac.compare_digest(current.api_key, x_ishbounty_api_key):
+    if not x_ishbounty_api_key or not hmac.compare_digest(configured_api_key, x_ishbounty_api_key):
         raise HTTPException(401, "invalid API key")
 
 
@@ -83,10 +101,34 @@ def change_status(bounty_id: str, data: TransitionRequest, db: Session = Depends
         raise HTTPException(409, str(e)) from e
 
 
+@app.post("/api/payment-accounts", response_model=PaymentAccountRead, status_code=201, dependencies=[Depends(require_api_key)])
+def add_payment_account(data: PaymentAccountCreate, db: Session = Depends(get_db)):
+    try:
+        return create_payment_account(db, data.owner_github, data.currency, data.iban, data.bank_name)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.get("/api/payment-accounts", response_model=list[PaymentAccountRead], dependencies=[Depends(require_api_key)])
+def payment_accounts(owner_github: str | None = None, db: Session = Depends(get_db)):
+    return list_payment_accounts(db, owner_github)
+
+
+@app.delete("/api/payment-accounts/{account_id}", status_code=204, dependencies=[Depends(require_api_key)])
+def remove_payment_account(account_id: str, db: Session = Depends(get_db)):
+    account = get_payment_account(db, account_id)
+    if not account:
+        raise HTTPException(404, "payment account not found")
+    try:
+        delete_payment_account(db, account)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+
+
 @app.post("/api/bounties/{bounty_id}/payment", response_model=PaymentRead, status_code=201, dependencies=[Depends(require_api_key)])
 def payment(bounty_id: str, data: PaymentCreate, db: Session = Depends(get_db)):
     try:
-        return create_payment(db, require_bounty(db, bounty_id), data.method, data.transfer_reference)
+        return create_payment(db, require_bounty(db, bounty_id), data.method, data.transfer_reference, data.payment_account_id)
     except ValueError as e:
         raise HTTPException(409, str(e)) from e
 
@@ -112,7 +154,7 @@ async def github_webhook(
     db: Session = Depends(get_db),
 ):
     body = await request.body()
-    webhook_secret = get_settings().github_webhook_secret
+    webhook_secret = get_settings().effective_github_webhook_secret
     if not webhook_secret:
         raise HTTPException(503, "GitHub webhook authentication is not configured")
     if not x_github_delivery:

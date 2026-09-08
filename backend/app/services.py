@@ -1,6 +1,8 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
 from app.models import Bounty, BountyStatus, Payment, PaymentStatus
+from app.payment_accounts import get_payment_account, verify_payment_account_owner_currency
 
 _ALLOWED = {
     BountyStatus.OPEN: {BountyStatus.CLAIMED, BountyStatus.CANCELLED},
@@ -56,12 +58,28 @@ def claim(db: Session, bounty: Bounty, solver: str):
     return transition(db, bounty, BountyStatus.CLAIMED)
 
 
-def create_payment(db: Session, bounty: Bounty, method: str, reference: str | None):
+def create_payment(
+    db: Session,
+    bounty: Bounty,
+    method: str,
+    reference: str | None,
+    payment_account_id: str | None = None,
+):
     if BountyStatus(bounty.status) != BountyStatus.MERGED:
         raise ValueError("payment can only be created after merge")
+    account = None
+    if payment_account_id:
+        account = get_payment_account(db, payment_account_id)
+        if not account:
+            raise ValueError("payment account not found")
+        if not bounty.solver_github:
+            raise ValueError("bounty has no solver")
+        verify_payment_account_owner_currency(account, bounty.solver_github, bounty.currency)
+
     transition(db, bounty, BountyStatus.PAYMENT_PENDING)
     payment = Payment(
         bounty_id=bounty.id,
+        payment_account_id=account.id if account else None,
         method=method,
         currency=bounty.currency,
         amount=bounty.amount,
