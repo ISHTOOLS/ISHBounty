@@ -81,6 +81,22 @@ def test_production_api_key_required():
         get_settings.cache_clear()
 
 
+def test_production_without_api_key_is_unavailable():
+    import os
+    from app.core.config import get_settings
+
+    reset_db()
+    os.environ['APP_ENV'] = 'production'
+    os.environ.pop('ISHB_API_KEY', None)
+    get_settings.cache_clear()
+    try:
+        denied = client.post('/api/bounties', json=payload(issue_number=82))
+        assert denied.status_code == 503
+    finally:
+        os.environ.pop('APP_ENV', None)
+        get_settings.cache_clear()
+
+
 def test_webhook_pr_check_and_merge_lifecycle():
     reset_db()
     created = client.post('/api/bounties', json=payload(issue_number=42, repository="owner/repo")).json()
