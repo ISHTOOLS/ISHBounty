@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from cryptography.exceptions import InvalidTag
 
 from app.core.ishv2ultracore import ISHV2UltraCore
 
@@ -20,7 +21,7 @@ def test_wrong_master_key_cannot_decrypt(tmp_path: Path):
     path = tmp_path / "secrets.json"
     ISHV2UltraCore(path, "correct-master-key").set("token", "secret")
 
-    with pytest.raises(Exception):
+    with pytest.raises(InvalidTag):
         ISHV2UltraCore(path, "wrong-master-key").get("token")
 
 
