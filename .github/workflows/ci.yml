@@ -1,0 +1,17 @@
+name: CI
+on:
+  push:
+    branches: [main, 'feature/**']
+  pull_request:
+    branches: [main]
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e './backend[test]'
+      - run: python -m compileall backend/app
+      - run: pytest -q backend/tests

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ishbounty-backend"
+version = "0.1.0"
+description = "ISHBounty API"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.30,<1",
+  "sqlalchemy>=2.0,<3",
+  "pydantic-settings>=2.6,<3",
+  "cryptography>=50,<51",
+]
+
+[project.optional-dependencies]
+# Keep the test toolchain on patched releases.
+test = ["pytest>=9.0.3,<10", "httpx>=0.27,<1"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff.lint]
+ignore = ["B008"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]

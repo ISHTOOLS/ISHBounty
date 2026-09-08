@@ -1,0 +1,35 @@
+name: Bounty
+description: Publish a paid development task
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for a concrete, testable development task. Payment is direct from sponsor to solver in the MVP.
+  - type: input
+    id: reward
+    attributes:
+      label: Reward
+      description: Amount and currency, e.g. 1000 TRY
+    validations:
+      required: true
+  - type: input
+    id: repository
+    attributes:
+      label: Target repository
+      placeholder: owner/repository
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Exact conditions a PR must satisfy
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Verification
+      description: Existing tests, commands, or reproducible checks
+    validations:
+      required: true
