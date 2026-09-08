@@ -1,4 +1,4 @@
-from enum import StrEnum
+from decimal import Decimal
 from pydantic import BaseModel, Field
 from app.models import BountyStatus, Currency, PaymentStatus
 
@@ -7,7 +7,7 @@ class BountyCreate(BaseModel):
     issue_number: int = Field(gt=0)
     title: str = Field(min_length=1, max_length=500)
     description: str = ""
-    amount: float = Field(gt=0)
+    amount: Decimal = Field(gt=0, max_digits=18, decimal_places=2)
     currency: Currency
     sponsor_github: str = Field(min_length=1, max_length=100)
 
@@ -31,7 +31,7 @@ class PaymentRead(BaseModel):
     bounty_id: str
     method: str
     currency: Currency
-    amount: float
+    amount: Decimal
     status: PaymentStatus
     transfer_reference: str | None = None
 
