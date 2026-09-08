@@ -52,6 +52,10 @@ class PaymentCreate(BaseModel):
     transfer_reference: str | None = Field(default=None, max_length=255)
 
 
+class PaymentProofRequest(BaseModel):
+    transfer_reference: str = Field(min_length=1, max_length=255)
+
+
 class PaymentRead(BaseModel):
     id: str
     bounty_id: str
@@ -61,6 +65,18 @@ class PaymentRead(BaseModel):
     amount: Decimal
     status: PaymentStatus
     transfer_reference: str | None = None
+
+
+class PaymentInstructionRead(BaseModel):
+    payment_id: str
+    bounty_id: str
+    beneficiary_github: str
+    bank_name: str | None = None
+    iban: str
+    amount: Decimal
+    currency: Currency
+    reference: str
+    status: PaymentStatus
 
 
 class WebhookResult(BaseModel):
