@@ -11,14 +11,14 @@ from app.core.config import get_settings
 from app.db import Base, engine, get_db
 from app.github_events import handle_check_run, handle_pull_request
 from app.models import BountyStatus, Payment, PaymentStatus, WebhookDelivery
-from app.payment_accounts import create_payment_account, delete_payment_account, get_payment_account, list_payment_accounts, verify_payment_account_owner_currency
+from app.payment_accounts import create_payment_account, delete_payment_account, get_payment_account, list_payment_accounts
 from app.payment_provider import verify_provider_signature
-from app.schemas import BountyCreate, BountyRead, ClaimRequest, PaymentAccountCreate, PaymentAccountRead, PaymentCreate, PaymentRead, TransitionRequest, WebhookResult
-from app.services import claim, create_bounty, create_payment, get_bounty, list_bounties, mark_paid, transition
+from app.schemas import BountyCreate, BountyRead, ClaimRequest, PaymentAccountCreate, PaymentAccountRead, PaymentCreate, PaymentInstructionRead, PaymentProofRequest, PaymentRead, TransitionRequest, WebhookResult
+from app.services import claim, create_bounty, create_payment, get_bounty, get_payment_instruction, list_bounties, mark_paid, submit_payment_proof, transition
 
 settings = get_settings()
 Base.metadata.create_all(bind=engine)
-app = FastAPI(title="ISHBounty API", version="1.0.2")
+app = FastAPI(title="ISHBounty API", version="1.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=settings.origins, allow_credentials=False, allow_methods=["GET", "POST", "DELETE"], allow_headers=["*"])
 
 
@@ -105,8 +105,34 @@ def remove_payment_account(account_id: str, db: Session = Depends(get_db)):
 
 @app.post("/api/bounties/{bounty_id}/payment", response_model=PaymentRead, status_code=201, dependencies=[Depends(require_api_key)])
 def payment(bounty_id: str, data: PaymentCreate, db: Session = Depends(get_db)):
+    if data.method != "DIRECT_BANK_TRANSFER":
+        raise HTTPException(400, "only DIRECT_BANK_TRANSFER is supported for API-less payments")
     try:
         return create_payment(db, require_bounty(db, bounty_id), data.method, data.transfer_reference, data.payment_account_id)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.get("/api/bounties/{bounty_id}/payment/instruction", response_model=PaymentInstructionRead, dependencies=[Depends(require_api_key)])
+def payment_instruction(bounty_id: str, db: Session = Depends(get_db)):
+    bounty = require_bounty(db, bounty_id)
+    payment = db.query(Payment).filter(Payment.bounty_id == bounty.id).order_by(Payment.created_at.desc()).first()
+    if not payment:
+        raise HTTPException(404, "payment not found")
+    try:
+        return get_payment_instruction(db, bounty, payment)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.post("/api/bounties/{bounty_id}/payment/proof", response_model=PaymentRead, dependencies=[Depends(require_api_key)])
+def payment_proof(bounty_id: str, data: PaymentProofRequest, db: Session = Depends(get_db)):
+    bounty = require_bounty(db, bounty_id)
+    payment = db.query(Payment).filter(Payment.bounty_id == bounty.id).order_by(Payment.created_at.desc()).first()
+    if not payment:
+        raise HTTPException(404, "payment not found")
+    try:
+        return submit_payment_proof(db, bounty, payment, data.transfer_reference)
     except ValueError as e:
         raise HTTPException(409, str(e)) from e
 
