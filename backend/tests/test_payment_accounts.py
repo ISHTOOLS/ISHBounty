@@ -126,5 +126,25 @@ def test_payment_links_to_solver_account(tmp_path):
         )
         assert payment.status_code == 201
         assert payment.json()["payment_account_id"] == account["id"]
+
+        instruction = client.get(f"/api/bounties/{bid}/payment/instruction")
+        assert instruction.status_code == 200
+        instruction_data = instruction.json()
+        assert instruction_data["iban"] == VALID_IBAN
+        assert instruction_data["amount"] == "100.00"
+        assert instruction_data["currency"] == "TRY"
+        assert instruction_data["reference"] == payment.json()["id"]
+        assert instruction_data["status"] == "PENDING"
+
+        proof = client.post(
+            f"/api/bounties/{bid}/payment/proof",
+            json={"transfer_reference": "BANK-REFERENCE-123"},
+        )
+        assert proof.status_code == 200
+        assert proof.json()["status"] == "PROOF_SUBMITTED"
+        assert proof.json()["transfer_reference"] == "BANK-REFERENCE-123"
+
+        bounty = client.get(f"/api/bounties/{bid}").json()
+        assert bounty["status"] == "PAYMENT_PENDING"
     finally:
         clear_store_config()
