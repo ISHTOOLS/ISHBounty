@@ -10,41 +10,19 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db import Base, engine, get_db
 from app.github_events import handle_check_run, handle_pull_request
-from app.models import Payment, WebhookDelivery
-from app.payment_accounts import (
-    create_payment_account,
-    delete_payment_account,
-    get_payment_account,
-    list_payment_accounts,
-    verify_payment_account_owner_currency,
-)
-from app.schemas import (
-    BountyCreate,
-    BountyRead,
-    ClaimRequest,
-    PaymentAccountCreate,
-    PaymentAccountRead,
-    PaymentCreate,
-    PaymentRead,
-    TransitionRequest,
-    WebhookResult,
-)
+from app.models import Payment, PaymentStatus, WebhookDelivery
+from app.payment_accounts import create_payment_account, delete_payment_account, get_payment_account, list_payment_accounts, verify_payment_account_owner_currency
+from app.payment_provider import verify_provider_signature
+from app.schemas import BountyCreate, BountyRead, ClaimRequest, PaymentAccountCreate, PaymentAccountRead, PaymentCreate, PaymentRead, TransitionRequest, WebhookResult
 from app.services import claim, create_bounty, create_payment, get_bounty, list_bounties, mark_paid, transition
 
 settings = get_settings()
 Base.metadata.create_all(bind=engine)
-app = FastAPI(title="ISHBounty API", version="0.1.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.origins,
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="ISHBounty API", version="1.0.2")
+app.add_middleware(CORSMiddleware, allow_origins=settings.origins, allow_credentials=False, allow_methods=["GET", "POST", "DELETE"], allow_headers=["*"])
 
 
 def require_api_key(x_ishbounty_api_key: str | None = Header(default=None)) -> None:
-    """Protect state-changing application APIs in production."""
     current = get_settings()
     if current.app_env.lower() in {"development", "test"}:
         return
@@ -146,13 +124,7 @@ def paid(bounty_id: str, data: PaymentCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/api/github/webhook", response_model=WebhookResult)
-async def github_webhook(
-    request: Request,
-    x_github_event: str = Header(default="unknown"),
-    x_github_delivery: str | None = Header(default=None),
-    x_hub_signature_256: str | None = Header(default=None),
-    db: Session = Depends(get_db),
-):
+async def github_webhook(request: Request, x_github_event: str = Header(default="unknown"), x_github_delivery: str | None = Header(default=None), x_hub_signature_256: str | None = Header(default=None), db: Session = Depends(get_db)):
     body = await request.body()
     webhook_secret = get_settings().effective_github_webhook_secret
     if not webhook_secret:
@@ -168,7 +140,6 @@ async def github_webhook(
         payload = json.loads(body or b"{}")
     except json.JSONDecodeError as e:
         raise HTTPException(400, "invalid JSON") from e
-
     delivery = WebhookDelivery(delivery_id=x_github_delivery, event=x_github_event)
     db.add(delivery)
     try:
@@ -176,10 +147,35 @@ async def github_webhook(
     except IntegrityError:
         db.rollback()
         return {"accepted": True, "event": x_github_event}
-
     if x_github_event == "pull_request":
         handle_pull_request(db, payload)
     elif x_github_event == "check_run":
         handle_check_run(db, payload)
     db.commit()
     return {"accepted": True, "event": x_github_event}
+
+
+@app.post("/api/payment/webhook", response_model=WebhookResult)
+async def payment_webhook(request: Request, x_payment_signature: str | None = Header(default=None), db: Session = Depends(get_db)):
+    body = await request.body()
+    if not verify_provider_signature(body, x_payment_signature):
+        raise HTTPException(401, "invalid payment provider signature")
+    try:
+        payload = json.loads(body or b"{}")
+    except json.JSONDecodeError as e:
+        raise HTTPException(400, "invalid JSON") from e
+    payment_id = payload.get("payment_id")
+    status = str(payload.get("status", "")).upper()
+    if not payment_id:
+        raise HTTPException(400, "missing payment_id")
+    payment = db.get(Payment, payment_id)
+    if not payment:
+        raise HTTPException(404, "payment not found")
+    if status in {"PAID", "SETTLED", "COMPLETED"}:
+        bounty = get_bounty(db, payment.bounty_id)
+        if bounty:
+            mark_paid(db, bounty, payment, payload.get("transfer_id") or payment.transfer_reference)
+    elif status in {"FAILED", "REJECTED"}:
+        payment.status = PaymentStatus.DISPUTED.value
+        db.commit()
+    return {"accepted": True, "event": "payment"}
