@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
 from enum import StrEnum
 from uuid import uuid4
-from sqlalchemy import DateTime, Float, Integer, String, Text
+from decimal import Decimal
+from sqlalchemy import DateTime, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
 
@@ -30,13 +31,14 @@ class PaymentStatus(StrEnum):
 
 class Bounty(Base):
     __tablename__ = "bounties"
+    __table_args__ = (UniqueConstraint("repository", "issue_number", name="uq_bounty_repository_issue"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     repository: Mapped[str] = mapped_column(String(255), index=True)
     issue_number: Mapped[int] = mapped_column(index=True)
     pull_request_number: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(500))
     description: Mapped[str] = mapped_column(Text, default="")
-    amount: Mapped[float] = mapped_column(Float)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3))
     sponsor_github: Mapped[str] = mapped_column(String(100))
     solver_github: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -50,7 +52,7 @@ class Payment(Base):
     bounty_id: Mapped[str] = mapped_column(String(36), index=True)
     method: Mapped[str] = mapped_column(String(40), default="DIRECT_BANK_TRANSFER")
     currency: Mapped[str] = mapped_column(String(3))
-    amount: Mapped[float] = mapped_column(Float)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     status: Mapped[str] = mapped_column(String(30), default=PaymentStatus.PENDING.value)
     transfer_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
