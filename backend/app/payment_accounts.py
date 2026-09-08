@@ -35,7 +35,7 @@ _COUNTRY_IBAN_LENGTHS = {
 
 
 def normalize_iban(value: str) -> str:
-    iban = re.sub(r"\\s+", "", value).upper()
+    iban = re.sub(r"\s+", "", value).upper()
     if not re.fullmatch(r"[A-Z]{2}[0-9]{2}[A-Z0-9]+", iban):
         raise ValueError("invalid IBAN format")
     expected = _COUNTRY_IBAN_LENGTHS.get(iban[:2])
@@ -44,7 +44,9 @@ def normalize_iban(value: str) -> str:
     if len(iban) < 15 or len(iban) > 34:
         raise ValueError("invalid IBAN length")
     rearranged = iban[4:] + iban[:4]
-    numeric = "".join(str(ord(char) - 55) if char.isalpha() else char for char in rearranged)
+    numeric = "".join(
+        str(ord(char) - 55) if char.isalpha() else char for char in rearranged
+    )
     if int(numeric) % 97 != 1:
         raise ValueError("invalid IBAN checksum")
     return iban
@@ -61,10 +63,19 @@ def _store() -> ISHV2UltraCore:
     settings = get_settings()
     if not settings.ishv2ultracore_store_path or not settings.ishv2ultracore_master_key:
         raise ValueError("payment account encryption is not configured")
-    return ISHV2UltraCore(settings.ishv2ultracore_store_path, settings.ishv2ultracore_master_key)
+    return ISHV2UltraCore(
+        settings.ishv2ultracore_store_path,
+        settings.ishv2ultracore_master_key,
+    )
 
 
-def create_payment_account(db: Session, owner_github: str, currency: Currency, iban: str, bank_name: str | None):
+def create_payment_account(
+    db: Session,
+    owner_github: str,
+    currency: Currency,
+    iban: str,
+    bank_name: str | None,
+):
     normalized = normalize_iban(iban)
     existing = db.scalars(
         select(PaymentAccount).where(
@@ -77,13 +88,12 @@ def create_payment_account(db: Session, owner_github: str, currency: Currency, i
 
     account_id = str(uuid4())
     store = _store()
-    secret_key = account_id
-    fingerprint = store.set(secret_key, normalized)
+    fingerprint = store.set(account_id, normalized)
     account = PaymentAccount(
         id=account_id,
         owner_github=owner_github,
         currency=currency.value,
-        secret_key=secret_key,
+        secret_key=account_id,
         iban_fingerprint=fingerprint,
         iban_masked=mask_iban(normalized),
         bank_name=bank_name,
@@ -94,14 +104,16 @@ def create_payment_account(db: Session, owner_github: str, currency: Currency, i
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        store.remove(secret_key)
+        store.remove(account_id)
         raise ValueError("payment account already exists") from exc
     db.refresh(account)
     return account
 
 
 def list_payment_accounts(db: Session, owner_github: str | None = None):
-    query = select(PaymentAccount).where(PaymentAccount.active.is_(True)).order_by(PaymentAccount.created_at.desc())
+    query = select(PaymentAccount).where(PaymentAccount.active.is_(True)).order_by(
+        PaymentAccount.created_at.desc()
+    )
     if owner_github:
         query = query.where(PaymentAccount.owner_github == owner_github)
     return list(db.scalars(query))
@@ -117,13 +129,14 @@ def delete_payment_account(db: Session, account: PaymentAccount) -> None:
     db.commit()
 
 
-def verify_payment_account_owner_currency(account: PaymentAccount, owner_github: str, currency: str) -> None:
+def verify_payment_account_owner_currency(
+    account: PaymentAccount, owner_github: str, currency: str
+) -> None:
     if not account.active:
         raise ValueError("payment account is inactive")
     if account.owner_github != owner_github:
         raise ValueError("payment account owner mismatch")
     if account.currency != currency:
         raise ValueError("payment account currency mismatch")
-    # Force authenticated decryption before an account is accepted for payment.
     if _store().get(account.secret_key) is None:
         raise ValueError("payment account secret is unavailable")
