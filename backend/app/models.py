@@ -1,10 +1,13 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 from enum import StrEnum
 from uuid import uuid4
-from decimal import Decimal
+
 from sqlalchemy import DateTime, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
+
 from app.db import Base
+
 
 class BountyStatus(StrEnum):
     OPEN = "OPEN"
@@ -17,10 +20,12 @@ class BountyStatus(StrEnum):
     DISPUTED = "DISPUTED"
     CANCELLED = "CANCELLED"
 
+
 class Currency(StrEnum):
     TRY = "TRY"
     USD = "USD"
     EUR = "EUR"
+
 
 class PaymentStatus(StrEnum):
     PENDING = "PENDING"
@@ -28,6 +33,7 @@ class PaymentStatus(StrEnum):
     VERIFIED = "VERIFIED"
     DISPUTED = "DISPUTED"
     PAID = "PAID"
+
 
 class Bounty(Base):
     __tablename__ = "bounties"
@@ -46,6 +52,7 @@ class Bounty(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
+
 class Payment(Base):
     __tablename__ = "payments"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
@@ -56,3 +63,11 @@ class Payment(Base):
     status: Mapped[str] = mapped_column(String(30), default=PaymentStatus.PENDING.value)
     transfer_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class WebhookDelivery(Base):
+    __tablename__ = "webhook_deliveries"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    delivery_id: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    event: Mapped[str] = mapped_column(String(100), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
