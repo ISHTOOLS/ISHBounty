@@ -43,6 +43,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           ISHB_AGENT_TOKEN: ${{ github.token }}
+          ISHB_AGENT_DISCOVERY_REPO: ${{ github.repository }}
           ISHB_GITHUB_APP_ID: ${{ secrets.ISHB_GITHUB_APP_ID }}
           ISHB_GITHUB_APP_PRIVATE_KEY: ${{ secrets.ISHB_GITHUB_APP_PRIVATE_KEY }}
           ISHB_LLM_API_KEY: ${{ secrets.ISHB_LLM_API_KEY }}
@@ -59,6 +60,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           ISHB_AGENT_TOKEN: ${{ github.token }}
+          ISHB_AGENT_DISCOVERY_REPO: ${{ github.repository }}
           ISHB_GITHUB_APP_ID: ${{ secrets.ISHB_GITHUB_APP_ID }}
           ISHB_GITHUB_APP_PRIVATE_KEY: ${{ secrets.ISHB_GITHUB_APP_PRIVATE_KEY }}
           ISHB_LLM_API_KEY: ${{ secrets.ISHB_LLM_API_KEY }}
@@ -68,4 +70,5 @@ jobs:
           ISHB_AGENT_MAX_FILES: ${{ vars.ISHB_AGENT_MAX_FILES || '12' }}
           ISHB_AGENT_MAX_PATCH_CHARS: ${{ vars.ISHB_AGENT_MAX_PATCH_CHARS || '60000' }}
           ISHB_AGENT_MAX_REPAIR_PRS: ${{ vars.ISHB_AGENT_MAX_REPAIR_PRS || '5' }}
+          ISHB_AGENT_MAX_REPAIR_ATTEMPTS: ${{ vars.ISHB_AGENT_MAX_REPAIR_ATTEMPTS || '3' }}
         run: python agent/repair_scan.py
