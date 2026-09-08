@@ -1,4 +1,6 @@
 from functools import lru_cache
+
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,8 +9,8 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./ishbounty.db"
     github_webhook_secret: str = ""
     allowed_origins: str = "http://localhost:5173"
-    api_key: str = ""
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    api_key: str = Field(default="", validation_alias="ISHB_API_KEY")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
 
     @property
     def origins(self) -> list[str]:
