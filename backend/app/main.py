@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db import Base, engine, get_db
 from app.github_events import handle_check_run, handle_pull_request
-from app.models import Payment, PaymentStatus, WebhookDelivery
+from app.models import BountyStatus, Payment, PaymentStatus, WebhookDelivery
 from app.payment_accounts import create_payment_account, delete_payment_account, get_payment_account, list_payment_accounts, verify_payment_account_owner_currency
 from app.payment_provider import verify_provider_signature
 from app.schemas import BountyCreate, BountyRead, ClaimRequest, PaymentAccountCreate, PaymentAccountRead, PaymentCreate, PaymentRead, TransitionRequest, WebhookResult
@@ -171,11 +171,17 @@ async def payment_webhook(request: Request, x_payment_signature: str | None = He
     payment = db.get(Payment, payment_id)
     if not payment:
         raise HTTPException(404, "payment not found")
+    bounty = get_bounty(db, payment.bounty_id)
+    if not bounty:
+        raise HTTPException(404, "bounty not found")
     if status in {"PAID", "SETTLED", "COMPLETED"}:
-        bounty = get_bounty(db, payment.bounty_id)
-        if bounty:
-            mark_paid(db, bounty, payment, payload.get("transfer_id") or payment.transfer_reference)
+        if BountyStatus(bounty.status) == BountyStatus.PAID and payment.status == PaymentStatus.PAID.value:
+            return {"accepted": True, "event": "payment"}
+        if BountyStatus(bounty.status) != BountyStatus.PAYMENT_PENDING:
+            raise HTTPException(409, "bounty is not awaiting payment")
+        mark_paid(db, bounty, payment, payload.get("transfer_id") or payment.transfer_reference)
     elif status in {"FAILED", "REJECTED"}:
-        payment.status = PaymentStatus.DISPUTED.value
-        db.commit()
+        if payment.status != PaymentStatus.PAID.value and BountyStatus(bounty.status) != BountyStatus.PAID:
+            payment.status = PaymentStatus.DISPUTED.value
+            db.commit()
     return {"accepted": True, "event": "payment"}
