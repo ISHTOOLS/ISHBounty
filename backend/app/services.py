@@ -2,7 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Bounty, BountyStatus, Payment, PaymentStatus
-from app.payment_accounts import get_payment_account, verify_payment_account_owner_currency
+from app.payment_accounts import get_payment_account, get_payout_iban, verify_payment_account_owner_currency
 
 _ALLOWED = {
     BountyStatus.OPEN: {BountyStatus.CLAIMED, BountyStatus.CANCELLED},
@@ -86,6 +86,41 @@ def create_payment(
         transfer_reference=reference,
     )
     db.add(payment)
+    db.commit()
+    db.refresh(payment)
+    return payment
+
+
+def get_payment_instruction(db: Session, bounty: Bounty, payment: Payment):
+    if payment.payment_account_id is None:
+        raise ValueError("payment has no beneficiary payment account")
+    if bounty.solver_github is None:
+        raise ValueError("bounty has no solver")
+    account = get_payment_account(db, payment.payment_account_id)
+    if not account or not account.active:
+        raise ValueError("beneficiary payment account is unavailable")
+    verify_payment_account_owner_currency(account, bounty.solver_github, bounty.currency)
+    iban = get_payout_iban(account)
+    return {
+        "payment_id": payment.id,
+        "bounty_id": bounty.id,
+        "beneficiary_github": bounty.solver_github,
+        "bank_name": account.bank_name,
+        "iban": iban,
+        "amount": payment.amount,
+        "currency": payment.currency,
+        "reference": payment.transfer_reference or payment.id,
+        "status": payment.status,
+    }
+
+
+def submit_payment_proof(db: Session, bounty: Bounty, payment: Payment, reference: str):
+    if BountyStatus(bounty.status) != BountyStatus.PAYMENT_PENDING:
+        raise ValueError("bounty is not awaiting payment")
+    if payment.status == PaymentStatus.PAID.value:
+        return payment
+    payment.status = PaymentStatus.PROOF_SUBMITTED.value
+    payment.transfer_reference = reference
     db.commit()
     db.refresh(payment)
     return payment
