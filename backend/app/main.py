@@ -89,11 +89,12 @@ async def github_webhook(
     db: Session = Depends(get_db),
 ):
     body = await request.body()
-    secret = settings.github_webhook_secret
-    if secret:
+    # Resolve settings at request time so test/runtime configuration changes are honored.
+    webhook_secret = get_settings().github_webhook_secret
+    if webhook_secret:
         if not x_hub_signature_256:
             raise HTTPException(401, "missing signature")
-        expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        expected = "sha256=" + hmac.new(webhook_secret.encode(), body, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, x_hub_signature_256):
             raise HTTPException(401, "invalid signature")
     try:
