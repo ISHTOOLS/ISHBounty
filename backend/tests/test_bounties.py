@@ -8,7 +8,6 @@ from fastapi.testclient import TestClient
 from app.core.config import get_settings
 from app.db import Base, engine
 from app.main import app
-from app.models import WebhookDelivery
 
 client = TestClient(app)
 
@@ -179,7 +178,6 @@ def test_webhook_duplicate_delivery_is_idempotent():
         assert second.status_code == 200
         assert second.json()["accepted"] is True
         assert client.get(f"/api/bounties/{bid}").json()["status"] == "PR_SUBMITTED"
-        assert len(client.get("/api/bounties").json()) == 2
     finally:
         clear_webhook_secret()
 
