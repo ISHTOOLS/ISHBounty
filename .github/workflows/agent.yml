@@ -1,0 +1,54 @@
+name: ISHBounty Autonomous Agent
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: ishbounty-agent
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    if: >-
+      github.event_name != 'issues' ||
+      github.event.label.name == 'bounty:agent'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout trusted agent code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          token: ${{ github.token }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install agent dependencies
+        run: python -m pip install --disable-pip-version-check requests
+
+      - name: Run autonomous issue-to-PR agent
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISHB_AGENT_TOKEN: ${{ github.token }}
+          ISHB_LLM_API_KEY: ${{ secrets.ISHB_LLM_API_KEY }}
+          ISHB_LLM_BASE_URL: ${{ vars.ISHB_LLM_BASE_URL || 'https://api.openai.com/v1/chat/completions' }}
+          ISHB_LLM_MODEL: ${{ vars.ISHB_LLM_MODEL || 'gpt-5.6-luna' }}
+          ISHB_AGENT_LABEL: ${{ vars.ISHB_AGENT_LABEL || 'bounty:agent' }}
+          ISHB_AGENT_TEST_COMMAND: ${{ vars.ISHB_AGENT_TEST_COMMAND || 'python -m pytest -q' }}
+          ISHB_AGENT_MAX_RETRIES: ${{ vars.ISHB_AGENT_MAX_RETRIES || '2' }}
+          ISHB_AGENT_MAX_FILES: ${{ vars.ISHB_AGENT_MAX_FILES || '12' }}
+          ISHB_AGENT_MAX_PATCH_CHARS: ${{ vars.ISHB_AGENT_MAX_PATCH_CHARS || '60000' }}
+        run: python agent/autofix_agent.py
