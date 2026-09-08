@@ -58,6 +58,29 @@ def test_duplicate_repository_issue_rejected():
     assert duplicate.status_code == 409
 
 
+def test_production_api_key_required():
+    import os
+    from app.core.config import get_settings
+
+    reset_db()
+    os.environ['APP_ENV'] = 'production'
+    os.environ['ISHB_API_KEY'] = 'test-api-key'
+    get_settings.cache_clear()
+    try:
+        denied = client.post('/api/bounties', json=payload(issue_number=80))
+        assert denied.status_code == 401
+        allowed = client.post(
+            '/api/bounties',
+            headers={'X-ISHBounty-API-Key': 'test-api-key'},
+            json=payload(issue_number=81),
+        )
+        assert allowed.status_code == 201
+    finally:
+        os.environ.pop('APP_ENV', None)
+        os.environ.pop('ISHB_API_KEY', None)
+        get_settings.cache_clear()
+
+
 def test_webhook_pr_check_and_merge_lifecycle():
     reset_db()
     created = client.post('/api/bounties', json=payload(issue_number=42, repository="owner/repo")).json()
