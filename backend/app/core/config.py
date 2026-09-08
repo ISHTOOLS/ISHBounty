@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     api_key: str = Field(default="", validation_alias="ISHB_API_KEY")
     ishv2ultracore_store_path: str = Field(default="", validation_alias="ISHV2_ULTRACORE_STORE_PATH")
     ishv2ultracore_master_key: str = Field(default="", validation_alias="ISHV2_ULTRACORE_MASTER_KEY")
+    payment_api_url: str = Field(default="", validation_alias="ISHB_PAYMENT_API_URL")
+    payment_api_token: str = Field(default="", validation_alias="ISHB_PAYMENT_API_TOKEN")
+    payment_webhook_secret: str = Field(default="", validation_alias="ISHB_PAYMENT_WEBHOOK_SECRET")
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
 
     @property
@@ -21,7 +24,6 @@ class Settings(BaseSettings):
         return [x.strip() for x in self.allowed_origins.split(",") if x.strip()]
 
     def get_secret(self, name: str, fallback: str = "") -> str:
-        """Read a secret from ISHV2UltraCore when configured, otherwise env config."""
         if self.ishv2ultracore_store_path and self.ishv2ultracore_master_key:
             store = ISHV2UltraCore(self.ishv2ultracore_store_path, self.ishv2ultracore_master_key)
             stored = store.get(name)
