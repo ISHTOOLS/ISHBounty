@@ -31,9 +31,10 @@ def require_api_key(x_ishbounty_api_key: str | None = Header(default=None)) -> N
     current = get_settings()
     if current.app_env.lower() in {"development", "test"}:
         return
-    if not current.api_key:
+    configured_api_key = current.effective_api_key
+    if not configured_api_key:
         raise HTTPException(503, "API authentication is not configured")
-    if not x_ishbounty_api_key or not hmac.compare_digest(current.api_key, x_ishbounty_api_key):
+    if not x_ishbounty_api_key or not hmac.compare_digest(configured_api_key, x_ishbounty_api_key):
         raise HTTPException(401, "invalid API key")
 
 
@@ -112,7 +113,7 @@ async def github_webhook(
     db: Session = Depends(get_db),
 ):
     body = await request.body()
-    webhook_secret = get_settings().github_webhook_secret
+    webhook_secret = get_settings().effective_github_webhook_secret
     if not webhook_secret:
         raise HTTPException(503, "GitHub webhook authentication is not configured")
     if not x_github_delivery:
