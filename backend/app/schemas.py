@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
-from app.models import BountyStatus, Currency, PaymentStatus
+from app.models import BountyStatus, Currency, PaymentDestinationType, PaymentStatus
 
 
 class BountyCreate(BaseModel):
@@ -44,11 +44,32 @@ class PaymentAccountRead(BaseModel):
     iban_fingerprint: str
     bank_name: str | None = None
     active: bool
+    destination_type: PaymentDestinationType = PaymentDestinationType.IBAN
+
+
+class PaymentDestinationCreate(BaseModel):
+    owner_github: str = Field(min_length=1, max_length=100)
+    currency: Currency
+    destination_type: PaymentDestinationType
+    destination: str = Field(min_length=1, max_length=255)
+    bank_name: str | None = Field(default=None, max_length=255)
+
+
+class PaymentDestinationRead(BaseModel):
+    id: str
+    owner_github: str
+    currency: Currency
+    destination_type: PaymentDestinationType
+    value_masked: str
+    value_fingerprint: str
+    bank_name: str | None = None
+    active: bool
 
 
 class PaymentCreate(BaseModel):
     method: str = "DIRECT_BANK_TRANSFER"
     payment_account_id: str | None = None
+    payment_destination_id: str | None = None
     transfer_reference: str | None = Field(default=None, max_length=255)
 
 
@@ -60,6 +81,7 @@ class PaymentRead(BaseModel):
     id: str
     bounty_id: str
     payment_account_id: str | None = None
+    payment_destination_id: str | None = None
     method: str
     currency: Currency
     amount: Decimal
@@ -71,8 +93,10 @@ class PaymentInstructionRead(BaseModel):
     payment_id: str
     bounty_id: str
     beneficiary_github: str
+    destination_type: PaymentDestinationType
+    destination: str
     bank_name: str | None = None
-    iban: str
+    iban: str | None = None
     amount: Decimal
     currency: Currency
     reference: str
