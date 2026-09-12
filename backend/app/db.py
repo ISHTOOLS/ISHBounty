@@ -12,26 +12,35 @@ class Base(DeclarativeBase):
     pass
 
 
-def _ensure_payment_destination_column() -> None:
-    """Keep existing installations compatible with the destination-type feature."""
+def _ensure_schema_compatibility() -> None:
+    """Keep existing installations compatible with additive payment fields."""
     inspector = inspect(engine)
-    if "payment_accounts" not in inspector.get_table_names():
-        return
-    columns = {column["name"] for column in inspector.get_columns("payment_accounts")}
-    if "destination_type" in columns:
-        return
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                "ALTER TABLE payment_accounts "
-                "ADD COLUMN destination_type VARCHAR(20) NOT NULL DEFAULT 'IBAN'"
-            )
-        )
+    tables = set(inspector.get_table_names())
+    if "payment_accounts" in tables:
+        columns = {column["name"] for column in inspector.get_columns("payment_accounts")}
+        if "destination_type" not in columns:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "ALTER TABLE payment_accounts "
+                        "ADD COLUMN destination_type VARCHAR(20) NOT NULL DEFAULT 'IBAN'"
+                    )
+                )
+    if "payments" in tables:
+        columns = {column["name"] for column in inspector.get_columns("payments")}
+        if "payment_destination_id" not in columns:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "ALTER TABLE payments "
+                        "ADD COLUMN payment_destination_id VARCHAR(36)"
+                    )
+                )
 
 
 def initialize_database() -> None:
     Base.metadata.create_all(bind=engine)
-    _ensure_payment_destination_column()
+    _ensure_schema_compatibility()
 
 
 def get_db():
