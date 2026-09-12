@@ -88,7 +88,7 @@ def add_payment_account(data: PaymentAccountCreate, db: Session = Depends(get_db
             data.owner_github,
             data.currency,
             data.destination_type,
-            data.destination_value,
+            data.resolved_destination_value(),
             data.bank_name,
         )
     except ValueError as e:
