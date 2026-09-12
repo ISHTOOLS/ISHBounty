@@ -35,6 +35,13 @@ class PaymentStatus(StrEnum):
     PAID = "PAID"
 
 
+class PaymentDestinationType(StrEnum):
+    IBAN = "IBAN"
+    PHONE = "PHONE"
+    EMAIL = "EMAIL"
+    TCKN = "TCKN"
+
+
 class Bounty(Base):
     __tablename__ = "bounties"
     __table_args__ = (UniqueConstraint("repository", "issue_number", name="uq_bounty_repository_issue"),)
@@ -60,12 +67,15 @@ class PaymentAccount(Base):
     owner_github: Mapped[str] = mapped_column(String(100), index=True)
     currency: Mapped[str] = mapped_column(String(3), index=True)
     secret_key: Mapped[str] = mapped_column(String(36), unique=True, index=True)
-    iban_fingerprint: Mapped[str] = mapped_column(String(64))
-    iban_masked: Mapped[str] = mapped_column(String(64))
+    iban_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    iban_masked: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    destination_type: Mapped[str | None] = mapped_column(String(16), nullable=True, default=PaymentDestinationType.IBAN.value)
+    destination_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    destination_masked: Mapped[str | None] = mapped_column(String(128), nullable=True)
     bank_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     active: Mapped[bool] = mapped_column(default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone=True))
 
 
 class Payment(Base):

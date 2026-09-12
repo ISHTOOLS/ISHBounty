@@ -65,6 +65,7 @@ def test_payment_account_is_encrypted_and_masked(tmp_path):
         assert response.status_code == 201
         data = response.json()
         assert data["currency"] == "TRY"
+        assert data["destination_type"] == "IBAN"
         assert data["iban_masked"].endswith("1326")
         assert VALID_IBAN not in json.dumps(data)
 
@@ -130,6 +131,7 @@ def test_payment_links_to_solver_account(tmp_path):
         instruction = client.get(f"/api/bounties/{bid}/payment/instruction")
         assert instruction.status_code == 200
         instruction_data = instruction.json()
+        assert instruction_data["destination_type"] == "IBAN"
         assert instruction_data["iban"] == VALID_IBAN
         assert instruction_data["amount"] == "100.00"
         assert instruction_data["currency"] == "TRY"
@@ -146,5 +148,43 @@ def test_payment_links_to_solver_account(tmp_path):
 
         bounty = client.get(f"/api/bounties/{bid}").json()
         assert bounty["status"] == "PAYMENT_PENDING"
+    finally:
+        clear_store_config()
+
+
+def test_kolas_payment_destinations_are_encrypted_and_usable(tmp_path):
+    reset_db()
+    configure_store(tmp_path)
+    try:
+        destinations = [
+            ("PHONE", "+905551112233", "+905551112233"),
+            ("EMAIL", "Solver@Example.Test", "solver@example.test"),
+            ("TCKN", "10000000146", "10000000146"),
+        ]
+        for index, (destination_type, raw_value, normalized) in enumerate(destinations, start=1):
+            response = client.post(
+                "/api/payment-accounts",
+                json={
+                    "owner_github": f"solver-{index}",
+                    "currency": "TRY",
+                    "destination_type": destination_type,
+                    "destination_value": raw_value,
+                    "bank_name": "Enpara Test",
+                },
+            )
+            assert response.status_code == 201, response.text
+            data = response.json()
+            assert data["destination_type"] == destination_type
+            assert normalized not in response.text
+            assert data["destination_fingerprint"]
+            assert data["destination_masked"]
+
+            stored = ISHV2UltraCore(tmp_path / "secrets.json", "test-master-key").get(data["id"])
+            assert stored == normalized
+
+        raw_store = (tmp_path / "secrets.json").read_text(encoding="utf-8")
+        assert "+905551112233" not in raw_store
+        assert "solver@example.test" not in raw_store
+        assert "10000000146" not in raw_store
     finally:
         clear_store_config()

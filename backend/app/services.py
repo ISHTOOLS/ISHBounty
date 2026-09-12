@@ -2,7 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Bounty, BountyStatus, Payment, PaymentStatus
-from app.payment_accounts import get_payment_account, get_payout_iban, verify_payment_account_owner_currency
+from app.payment_accounts import get_payment_account, get_payout_destination, verify_payment_account_owner_currency
 
 _ALLOWED = {
     BountyStatus.OPEN: {BountyStatus.CLAIMED, BountyStatus.CANCELLED},
@@ -100,13 +100,15 @@ def get_payment_instruction(db: Session, bounty: Bounty, payment: Payment):
     if not account or not account.active:
         raise ValueError("beneficiary payment account is unavailable")
     verify_payment_account_owner_currency(account, bounty.solver_github, bounty.currency)
-    iban = get_payout_iban(account)
+    destination = get_payout_destination(account)
     return {
         "payment_id": payment.id,
         "bounty_id": bounty.id,
         "beneficiary_github": bounty.solver_github,
         "bank_name": account.bank_name,
-        "iban": iban,
+        "destination_type": account.destination_type,
+        "destination_value": destination,
+        "iban": destination if account.destination_type == "IBAN" else None,
         "amount": payment.amount,
         "currency": payment.currency,
         "reference": payment.transfer_reference or payment.id,
