@@ -18,7 +18,7 @@ from app.services import claim, create_bounty, create_payment, get_bounty, get_p
 
 settings = get_settings()
 Base.metadata.create_all(bind=engine)
-app = FastAPI(title="ISHBounty API", version="1.1.0")
+app = FastAPI(title="ISHBounty API", version="1.2.0")
 app.add_middleware(CORSMiddleware, allow_origins=settings.origins, allow_credentials=False, allow_methods=["GET", "POST", "DELETE"], allow_headers=["*"])
 
 
@@ -82,7 +82,14 @@ def change_status(bounty_id: str, data: TransitionRequest, db: Session = Depends
 @app.post("/api/payment-accounts", response_model=PaymentAccountRead, status_code=201, dependencies=[Depends(require_api_key)])
 def add_payment_account(data: PaymentAccountCreate, db: Session = Depends(get_db)):
     try:
-        return create_payment_account(db, data.owner_github, data.currency, data.iban, data.bank_name)
+        return create_payment_account(
+            db,
+            data.owner_github,
+            data.currency,
+            data.destination_type,
+            data.destination_value,
+            data.bank_name,
+        )
     except ValueError as e:
         raise HTTPException(409, str(e)) from e
 
