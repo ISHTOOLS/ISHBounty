@@ -4,7 +4,7 @@ ISHBounty keeps `DIRECT_BANK_TRANSFER` as the API-less live settlement path. In 
 
 ## Enpara-style Kolay Adres
 
-Enpara documents Kolay Adres as a way to receive FAST transfers without sharing an IBAN, using a mapped phone number, e-mail address or T.C. identity number. The same account can have multiple different Kolay Adres mappings at the same time. citeturn0search1turn0search3
+Enpara documents Kolay Adres as a way to receive FAST transfers without sharing an IBAN, using a mapped phone number, e-mail address or T.C. identity number. The same account can have multiple different Kolay Adres mappings at the same time.
 
 ISHBounty mirrors that user experience at the beneficiary-settings layer:
 
@@ -27,7 +27,7 @@ Full destination values are stored only in ISHV2UltraCore. The SQL database keep
 
 ## Ödeme İste / Request-to-Pay boundary
 
-Enpara's `Ödeme İste` is a BKM FAST-layer request-to-pay service. Enpara states that requests can be sent to IBAN, Kolay Adres or QR and then reach the payer through SMS or push notification. BKM also states that e-commerce and face-to-face corporate use can be provided through a merchant-specific API, which requires the appropriate participant/merchant onboarding. citeturn1search4turn3search0
+Enpara's `Ödeme İste` is a BKM FAST-layer request-to-pay service. Enpara states that requests can be sent to IBAN, Kolay Adres or QR and then reach the payer through SMS or push notification. BKM states that e-commerce and face-to-face corporate use can be provided through a merchant-specific API, which requires the appropriate participant/merchant onboarding.
 
 Therefore, activating Kolay Adres in the Enpara mobile app is enough for the API-less receiving flow, but it does **not** by itself give ISHBounty an API credential to create `Ödeme İste` requests. We keep that integration behind a future `PAYMENT_REQUEST_PROVIDER` adapter rather than scraping or automating the bank application.
 
