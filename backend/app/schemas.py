@@ -33,12 +33,15 @@ class PaymentAccountCreate(BaseModel):
     owner_github: str = Field(min_length=1, max_length=100)
     currency: Currency
     destination_type: PaymentDestinationType = PaymentDestinationType.IBAN
-    destination_value: str = Field(min_length=3, max_length=255)
+    destination_value: str | None = Field(default=None, min_length=3, max_length=255)
+    iban: str | None = Field(default=None, min_length=5, max_length=64)
     bank_name: str | None = Field(default=None, max_length=255)
 
-    @property
-    def iban(self) -> str | None:
-        return self.destination_value if self.destination_type == PaymentDestinationType.IBAN else None
+    def resolved_destination_value(self) -> str:
+        value = self.destination_value or self.iban
+        if not value:
+            raise ValueError("destination_value is required")
+        return value
 
 
 class PaymentAccountRead(BaseModel):
@@ -49,7 +52,7 @@ class PaymentAccountRead(BaseModel):
     destination_masked: str
     iban_masked: str | None = None
     iban_fingerprint: str | None = None
-    destination_fingerprint: str
+    destination_fingerprint: str | None = None
     bank_name: str | None = None
     active: bool
 
