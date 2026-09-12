@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.db import Base, engine, get_db
+from app.db import Base, engine, ensure_payment_destination_schema, get_db
 from app.github_events import handle_check_run, handle_pull_request
 from app.models import BountyStatus, Payment, PaymentStatus, WebhookDelivery
 from app.payment_accounts import create_payment_account, delete_payment_account, get_payment_account, list_payment_accounts
@@ -18,6 +18,7 @@ from app.services import claim, create_bounty, create_payment, get_bounty, get_p
 
 settings = get_settings()
 Base.metadata.create_all(bind=engine)
+ensure_payment_destination_schema()
 app = FastAPI(title="ISHBounty API", version="1.2.0")
 app.add_middleware(CORSMiddleware, allow_origins=settings.origins, allow_credentials=False, allow_methods=["GET", "POST", "DELETE"], allow_headers=["*"])
 
