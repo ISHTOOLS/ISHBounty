@@ -1,8 +1,9 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Bounty, BountyStatus, Payment, PaymentStatus
+from app.models import Bounty, BountyStatus, Payment, PaymentStatus, PaymentDestinationType
 from app.payment_accounts import get_payment_account, get_payout_iban, verify_payment_account_owner_currency
+from app.payment_destinations import get_payment_destination, get_payment_destination_value, verify_payment_destination
 
 _ALLOWED = {
     BountyStatus.OPEN: {BountyStatus.CLAIMED, BountyStatus.CANCELLED},
@@ -64,22 +65,33 @@ def create_payment(
     method: str,
     reference: str | None,
     payment_account_id: str | None = None,
+    payment_destination_id: str | None = None,
 ):
     if BountyStatus(bounty.status) != BountyStatus.MERGED:
         raise ValueError("payment can only be created after merge")
+    if payment_account_id and payment_destination_id:
+        raise ValueError("choose either payment_account_id or payment_destination_id")
+    if not bounty.solver_github:
+        raise ValueError("bounty has no solver")
+
     account = None
+    destination = None
     if payment_account_id:
         account = get_payment_account(db, payment_account_id)
         if not account:
             raise ValueError("payment account not found")
-        if not bounty.solver_github:
-            raise ValueError("bounty has no solver")
         verify_payment_account_owner_currency(account, bounty.solver_github, bounty.currency)
+    elif payment_destination_id:
+        destination = get_payment_destination(db, payment_destination_id)
+        if not destination:
+            raise ValueError("payment destination not found")
+        verify_payment_destination(destination, bounty.solver_github, bounty.currency)
 
     transition(db, bounty, BountyStatus.PAYMENT_PENDING)
     payment = Payment(
         bounty_id=bounty.id,
         payment_account_id=account.id if account else None,
+        payment_destination_id=destination.id if destination else None,
         method=method,
         currency=bounty.currency,
         amount=bounty.amount,
@@ -92,10 +104,32 @@ def create_payment(
 
 
 def get_payment_instruction(db: Session, bounty: Bounty, payment: Payment):
-    if payment.payment_account_id is None:
-        raise ValueError("payment has no beneficiary payment account")
     if bounty.solver_github is None:
         raise ValueError("bounty has no solver")
+
+    if payment.payment_destination_id:
+        destination = get_payment_destination(db, payment.payment_destination_id)
+        if not destination or not destination.active:
+            raise ValueError("beneficiary payment destination is unavailable")
+        verify_payment_destination(destination, bounty.solver_github, bounty.currency)
+        value = get_payment_destination_value(destination)
+        destination_type = PaymentDestinationType(destination.destination_type)
+        return {
+            "payment_id": payment.id,
+            "bounty_id": bounty.id,
+            "beneficiary_github": bounty.solver_github,
+            "destination_type": destination_type,
+            "destination": value,
+            "bank_name": destination.bank_name,
+            "iban": None,
+            "amount": payment.amount,
+            "currency": payment.currency,
+            "reference": payment.transfer_reference or payment.id,
+            "status": payment.status,
+        }
+
+    if payment.payment_account_id is None:
+        raise ValueError("payment has no beneficiary payment destination")
     account = get_payment_account(db, payment.payment_account_id)
     if not account or not account.active:
         raise ValueError("beneficiary payment account is unavailable")
@@ -105,6 +139,8 @@ def get_payment_instruction(db: Session, bounty: Bounty, payment: Payment):
         "payment_id": payment.id,
         "bounty_id": bounty.id,
         "beneficiary_github": bounty.solver_github,
+        "destination_type": PaymentDestinationType.IBAN,
+        "destination": iban,
         "bank_name": account.bank_name,
         "iban": iban,
         "amount": payment.amount,
