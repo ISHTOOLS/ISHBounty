@@ -12,9 +12,18 @@ from app.payment_destinations import normalize_phone, normalize_tckn
 
 client = TestClient(app)
 VALID_IBAN = "TR330006100519786457841326"
-VALID_TCKN = "10000000142"
 VALID_PHONE = "+905551112233"
 VALID_EMAIL = "solver@example.test"
+
+
+def build_test_tckn():
+    first_nine = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    tenth = (sum(first_nine[0::2]) * 7 - sum(first_nine[1::2])) % 10
+    eleventh = (sum(first_nine) + tenth) % 10
+    return "".join(str(value) for value in first_nine + [tenth, eleventh])
+
+
+VALID_TCKN = build_test_tckn()
 
 
 def reset_db():
