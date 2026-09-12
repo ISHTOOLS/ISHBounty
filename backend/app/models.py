@@ -35,6 +35,13 @@ class PaymentStatus(StrEnum):
     PAID = "PAID"
 
 
+class PaymentDestinationType(StrEnum):
+    IBAN = "IBAN"
+    PHONE = "PHONE"
+    EMAIL = "EMAIL"
+    TCKN = "TCKN"
+
+
 class Bounty(Base):
     __tablename__ = "bounties"
     __table_args__ = (UniqueConstraint("repository", "issue_number", name="uq_bounty_repository_issue"),)
@@ -63,6 +70,7 @@ class PaymentAccount(Base):
     iban_fingerprint: Mapped[str] = mapped_column(String(64))
     iban_masked: Mapped[str] = mapped_column(String(64))
     bank_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    destination_type: Mapped[str] = mapped_column(String(20), default=PaymentDestinationType.IBAN.value)
     active: Mapped[bool] = mapped_column(default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
