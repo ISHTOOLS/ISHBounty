@@ -1,1 +1,113 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ISHBounty</title><style>body{font-family:system-ui;margin:0;background:#0b1020;color:#eef2ff}main{max-width:1000px;margin:auto;padding:48px 20px}section{background:#151c33;border:1px solid #293455;border-radius:16px;padding:24px;margin-top:20px}button{padding:10px 14px;border:0;border-radius:8px;cursor:pointer}small{color:#aeb9d8}</style></head><body><main><h1>ISHBounty</h1><p>Real GitHub issues. Real pull requests. Real developer bounties.</p><section><h2>Marketplace</h2><p id="state">Loading bounties…</p><div id="list"></div></section><section><h2>How it works</h2><ol><li>Post a difficult GitHub issue with a reward.</li><li>Developers submit a pull request.</li><li>CI and maintainer review determine acceptance.</li><li>The sponsor pays the solver directly by bank transfer.</li></ol><small>ISHBounty does not hold bounty funds in the MVP.</small></section></main><script>const API=localStorage.getItem('ISHBOUNTY_API')||'http://localhost:8000';fetch(API+'/api/bounties').then(r=>r.json()).then(items=>{document.querySelector('#state').textContent=items.length+' live bounty records';document.querySelector('#list').innerHTML=items.map(x=>`<article><h3>${x.title}</h3><p>${x.amount} ${x.currency} · ${x.status}</p><small>${x.repository}#${x.issue_number}</small></article>`).join('')}).catch(()=>document.querySelector('#state').textContent='API unavailable — configure the backend endpoint.');</script></body></html>
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ISHBounty</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#18212f;background:#f6f7f9}
+    *{box-sizing:border-box}body{margin:0}main{max-width:1000px;margin:auto;padding:28px 16px 60px}
+    section{background:#fff;border:1px solid #dfe3e8;border-radius:18px;padding:22px;margin-top:18px;box-shadow:0 5px 18px rgba(0,0,0,.04)}
+    h1{margin:0 0 6px}h2{margin-top:0}p{line-height:1.5}.muted{color:#667085;font-size:.92rem}
+    .field{display:grid;gap:7px;margin:12px 0}.field input,.field select{width:100%;padding:12px;border:1px solid #cfd5dd;border-radius:10px;font:inherit;background:#fff}
+    .destinations{display:grid;gap:10px}.dest{border:1px solid #dfe3e8;border-radius:14px;padding:16px;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
+    .dest h3{margin:0 0 3px;font-size:1rem}.dest p{margin:0}.toggle{width:54px;height:32px;border-radius:20px;border:0;background:#c7cdd6;position:relative;cursor:pointer}.toggle:after{content:"";position:absolute;top:4px;left:4px;width:24px;height:24px;border-radius:50%;background:#fff;transition:.18s}.toggle.on{background:#2fc65a}.toggle.on:after{left:26px}
+    .editor{display:none;grid-column:1/-1;border-top:1px solid #edf0f3;margin-top:12px;padding-top:12px}.editor.open{display:block}.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{padding:10px 14px;border:0;border-radius:10px;background:#222b3a;color:#fff;cursor:pointer}.btn.secondary{background:#eef1f5;color:#18212f}.status{min-height:22px;margin-top:10px}.danger{color:#b42318}.ok{color:#067647}
+    article{padding:14px 0;border-bottom:1px solid #edf0f3}article:last-child{border-bottom:0}article h3{margin:0 0 5px}
+    @media(max-width:600px){main{padding:20px 12px}.dest{grid-template-columns:1fr auto}section{padding:18px}}
+  </style>
+</head>
+<body>
+<main>
+  <h1>ISHBounty</h1>
+  <p>Gerçek GitHub işleri, gerçek PR'lar ve gerçek bounty ödemeleri.</p>
+
+  <section>
+    <h2>Bounty Marketplace</h2>
+    <p id="state" class="muted">Bounties yükleniyor…</p>
+    <div id="list"></div>
+  </section>
+
+  <section>
+    <h2>Ödeme adresleri</h2>
+    <p class="muted">Enpara'daki Kolay Adres mantığıyla solver, IBAN paylaşmadan telefon, e-posta veya T.C. kimlik numarasını ödeme adresi olarak tanımlayabilir. Değerler veritabanında açık metin tutulmaz; ISHV2UltraCore içinde şifrelenir.</p>
+
+    <div class="field">
+      <label for="owner">GitHub kullanıcı adı</label>
+      <input id="owner" type="text" autocomplete="username" placeholder="ör. ismailozdemir01">
+    </div>
+    <div class="field">
+      <label for="api">ISHBounty API anahtarı</label>
+      <input id="api" type="password" autocomplete="off" placeholder="Sadece bu oturum için">
+      <span class="muted">Anahtar tarayıcıda saklanmaz.</span>
+    </div>
+
+    <div class="destinations" id="destinations"></div>
+    <div id="payment-status" class="status muted"></div>
+  </section>
+
+  <section>
+    <h2>Ödeme akışı</h2>
+    <ol>
+      <li>Bounty MERGED olur ve ödeme PENDING durumuna geçer.</li>
+      <li>Sponsor, solver'ın seçtiği IBAN veya Kolay Adres bilgisini görür.</li>
+      <li>Sponsor kendi banka uygulamasından gerçek FAST/Havale transferini yapar.</li>
+      <li>Gerçek banka işlem referansı ISHBounty'ye gönderilir ve ödeme PROOF_SUBMITTED olur.</li>
+      <li>Yetkili doğrulama yapıldıktan sonra ödeme PAID olur.</li>
+    </ol>
+    <p class="muted">Bu sürüm bankanın hesabına giriş yapmaz ve banka transferi uydurmaz. Enpara/BKM'nin e-ticaret “Ödeme İste” API'si ayrıca üye işyeri/onboarding gerektirirse, ikinci aşamada gerçek API adaptörü eklenebilir.</p>
+  </section>
+</main>
+
+<script>
+const API=localStorage.getItem('ISHBOUNTY_API')||'http://localhost:8000';
+const types=[
+  {type:'PHONE',label:'Cep telefonu numaram ile eşleştir',placeholder:'0555 111 22 33'},
+  {type:'EMAIL',label:'E-posta adresim ile eşleştir',placeholder:'ornek@alanadi.com'},
+  {type:'TCKN',label:'T.C. kimlik numaram ile eşleştir',placeholder:'11 haneli T.C. kimlik numarası'},
+  {type:'IBAN',label:'IBAN ile ödeme al',placeholder:'TR...'}
+];
+function headers(){const key=document.getElementById('api').value.trim();return key?{'X-ISHBounty-API-Key':key}:{};}
+function owner(){return document.getElementById('owner').value.trim();}
+function setStatus(text,kind='muted'){const el=document.getElementById('payment-status');el.textContent=text;el.className='status '+kind;}
+function renderCards(existing){
+  const root=document.getElementById('destinations');root.replaceChildren();
+  const byType=new Map(existing.map(x=>[x.destination_type,x]));
+  for(const item of types){
+    const current=byType.get(item.type);
+    const card=document.createElement('div');card.className='dest';card.dataset.type=item.type;
+    const left=document.createElement('div');const h=document.createElement('h3');h.textContent=item.label;left.appendChild(h);
+    const p=document.createElement('p');p.className='muted';p.textContent=current?current.value_masked:'Tanımlı değil';left.appendChild(p);
+    const right=document.createElement('div');const toggle=document.createElement('button');toggle.className='toggle '+(current?'on':'');toggle.setAttribute('aria-label',item.label);toggle.type='button';right.appendChild(toggle);card.append(left,right);
+    const editor=document.createElement('div');editor.className='editor';
+    const field=document.createElement('div');field.className='field';const input=document.createElement('input');input.type=item.type==='TCKN'?'password':'text';input.autocomplete='off';input.placeholder=item.placeholder;field.appendChild(input);
+    const actions=document.createElement('div');actions.className='actions';const save=document.createElement('button');save.className='btn';save.textContent='Kaydet';save.type='button';actions.appendChild(save);
+    if(current){const del=document.createElement('button');del.className='btn secondary';del.textContent='Kapat';del.type='button';actions.appendChild(del);del.onclick=()=>removeDestination(current.id,item.type);}
+    editor.append(field,actions);card.appendChild(editor);
+    toggle.onclick=()=>{editor.classList.toggle('open');if(editor.classList.contains('open'))input.focus();};
+    save.onclick=()=>saveDestination(item.type,input.value);
+    root.appendChild(card);
+  }
+}
+async function loadDestinations(){
+  try{const r=await fetch(API+'/api/payment-destinations',{headers:headers()});if(!r.ok)throw new Error('API '+r.status);renderCards(await r.json());setStatus('Ödeme adresleri yüklendi.','ok');}
+  catch(e){renderCards([]);setStatus('Ödeme adreslerini görmek için GitHub kullanıcı adı ve geçerli API anahtarı girin.','danger');}
+}
+async function saveDestination(type,value){
+  if(!owner()){setStatus('Önce GitHub kullanıcı adını girin.','danger');return;}
+  if(!value.trim()){setStatus('Ödeme adresi boş bırakılamaz.','danger');return;}
+  try{const r=await fetch(API+'/api/payment-destinations',{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({owner_github:owner(),currency:'TRY',destination_type:type,destination:value.trim(),bank_name:type==='IBAN'?'Enpara':null})});const data=await r.json();if(!r.ok)throw new Error(data.detail||'Kayıt başarısız');setStatus(type+' ödeme adresi etkinleştirildi.','ok');await loadDestinations();}
+  catch(e){setStatus(e.message,'danger');}
+}
+async function removeDestination(id,type){
+  try{const r=await fetch(API+'/api/payment-destinations/'+encodeURIComponent(id),{method:'DELETE',headers:headers()});if(!r.ok)throw new Error('Kapatma başarısız');setStatus(type+' ödeme adresi kapatıldı.','ok');await loadDestinations();}
+  catch(e){setStatus(e.message,'danger');}
+}
+async function loadBounties(){
+  try{const r=await fetch(API+'/api/bounties');if(!r.ok)throw new Error();const items=await r.json();document.getElementById('state').textContent=items.length+' canlı bounty kaydı';const list=document.getElementById('list');list.replaceChildren();for(const x of items){const a=document.createElement('article');const h=document.createElement('h3');h.textContent=x.title;const p=document.createElement('p');p.textContent=`${x.amount} ${x.currency} · ${x.status}`;const s=document.createElement('span');s.className='muted';s.textContent=`${x.repository}#${x.issue_number}`;a.append(h,p,s);list.appendChild(a);}}
+  catch(e){document.getElementById('state').textContent='API kullanılamıyor — backend adresini yapılandırın.';}
+}
+document.getElementById('api').addEventListener('change',loadDestinations);document.getElementById('owner').addEventListener('change',loadDestinations);loadBounties();loadDestinations();
+</script>
+</body>
+</html>
