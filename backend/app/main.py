@@ -8,17 +8,32 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.db import Base, engine, get_db
+from app.db import initialize_database, engine, get_db
 from app.github_events import handle_check_run, handle_pull_request
 from app.models import BountyStatus, Payment, PaymentStatus, WebhookDelivery
 from app.payment_accounts import create_payment_account, delete_payment_account, get_payment_account, list_payment_accounts
+from app.payment_destinations import create_payment_destination, delete_payment_destination, get_payment_destination, list_payment_destinations
 from app.payment_provider import verify_provider_signature
-from app.schemas import BountyCreate, BountyRead, ClaimRequest, PaymentAccountCreate, PaymentAccountRead, PaymentCreate, PaymentInstructionRead, PaymentProofRequest, PaymentRead, TransitionRequest, WebhookResult
+from app.schemas import (
+    BountyCreate,
+    BountyRead,
+    ClaimRequest,
+    PaymentAccountCreate,
+    PaymentAccountRead,
+    PaymentCreate,
+    PaymentDestinationCreate,
+    PaymentDestinationRead,
+    PaymentInstructionRead,
+    PaymentProofRequest,
+    PaymentRead,
+    TransitionRequest,
+    WebhookResult,
+)
 from app.services import claim, create_bounty, create_payment, get_bounty, get_payment_instruction, list_bounties, mark_paid, submit_payment_proof, transition
 
 settings = get_settings()
-Base.metadata.create_all(bind=engine)
-app = FastAPI(title="ISHBounty API", version="1.1.0")
+initialize_database()
+app = FastAPI(title="ISHBounty API", version="1.2.0")
 app.add_middleware(CORSMiddleware, allow_origins=settings.origins, allow_credentials=False, allow_methods=["GET", "POST", "DELETE"], allow_headers=["*"])
 
 
@@ -103,12 +118,43 @@ def remove_payment_account(account_id: str, db: Session = Depends(get_db)):
         raise HTTPException(409, str(e)) from e
 
 
+@app.post("/api/payment-destinations", response_model=PaymentDestinationRead, status_code=201, dependencies=[Depends(require_api_key)])
+def add_payment_destination(data: PaymentDestinationCreate, db: Session = Depends(get_db)):
+    try:
+        return create_payment_destination(db, data.owner_github, data.currency, data.destination_type, data.destination, data.bank_name)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.get("/api/payment-destinations", response_model=list[PaymentDestinationRead], dependencies=[Depends(require_api_key)])
+def payment_destinations(owner_github: str | None = None, db: Session = Depends(get_db)):
+    return list_payment_destinations(db, owner_github)
+
+
+@app.delete("/api/payment-destinations/{destination_id}", status_code=204, dependencies=[Depends(require_api_key)])
+def remove_payment_destination(destination_id: str, db: Session = Depends(get_db)):
+    destination = get_payment_destination(db, destination_id)
+    if not destination:
+        raise HTTPException(404, "payment destination not found")
+    try:
+        delete_payment_destination(db, destination)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+
+
 @app.post("/api/bounties/{bounty_id}/payment", response_model=PaymentRead, status_code=201, dependencies=[Depends(require_api_key)])
 def payment(bounty_id: str, data: PaymentCreate, db: Session = Depends(get_db)):
     if data.method != "DIRECT_BANK_TRANSFER":
-        raise HTTPException(400, "only DIRECT_BANK_TRANSFER is supported for API-less payments")
+        raise HTTPException(400, "only DIRECT_BANK_TRANSFER is supported for API-less FAST/Kolay Adres payments")
     try:
-        return create_payment(db, require_bounty(db, bounty_id), data.method, data.transfer_reference, data.payment_account_id)
+        return create_payment(
+            db,
+            require_bounty(db, bounty_id),
+            data.method,
+            data.transfer_reference,
+            data.payment_account_id,
+            data.payment_destination_id,
+        )
     except ValueError as e:
         raise HTTPException(409, str(e)) from e
 
