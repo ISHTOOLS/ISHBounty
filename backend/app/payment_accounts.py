@@ -106,6 +106,8 @@ def create_payment_account(
     destination_value: str,
     bank_name: str | None,
 ):
+    if destination_type != PaymentDestinationType.IBAN and currency != Currency.TRY:
+        raise ValueError("KOLAS destinations are supported only for TRY")
     normalized = normalize_kolas(destination_value, destination_type)
     existing = db.scalars(select(PaymentAccount).where(PaymentAccount.owner_github == owner_github, PaymentAccount.currency == currency.value)).first()
     if existing:
