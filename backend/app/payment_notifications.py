@@ -1,1 +1,0 @@
-# Payment notification matching module.
