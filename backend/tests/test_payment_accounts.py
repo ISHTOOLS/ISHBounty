@@ -3,7 +3,7 @@ import os
 
 from fastapi.testclient import TestClient
 
-from app.core.get_settings import get_settings
+from app.core.config import get_settings
 from app.core.ishv2ultracore import ISHV2UltraCore
 from app.db import Base, engine
 from app.main import app
@@ -182,8 +182,9 @@ def test_kolas_payment_destinations_are_encrypted_and_usable(tmp_path):
             stored = ISHV2UltraCore(tmp_path / "secrets.json", "test-master-key").get(data["id"])
             assert stored == normalized
 
-        assert "+905551112233" not in (tmp_path / "secrets.json").read_text(encoding="utf-8")
-        assert "solver@example.test" not in (tmp_path / "secrets.json").read_text(encoding="utf-8")
-        assert "10000000146" not in (tmp_path / "secrets.json").read_text(encoding="utf-8")
+        raw_store = (tmp_path / "secrets.json").read_text(encoding="utf-8")
+        assert "+905551112233" not in raw_store
+        assert "solver@example.test" not in raw_store
+        assert "10000000146" not in raw_store
     finally:
         clear_store_config()
